@@ -1,0 +1,345 @@
+#!/usr/bin/perl -w
+use strict;
+## Debug with: o inhibit_exit=0
+
+## Compose
+
+(my $DIR = $0) =~ s/[^\/]+$//;
+$DIR = '.' if !length($DIR);
+
+## Facilitate composing live loops.  Recording via Jack and overdubbing
+
+## Records everything connected to Jack with `qzn3t/jack_rec`
+## Converts the recordings to WAV files
+
+## Usage:
+sub usage {
+    print STDERR "120Proof/bin/Compose [-p <prefix>] [-b <backing track>] [-d <directory>]\n";
+}
+
+# o inhibit_exit=0
+## `$file_pfx` is prefixed to all track file names.  Over ride with `-p`
+my $file_pfx = &std_pfx();
+
+# `$directory` to write to
+my $directory = &std_dir();
+
+# When overdubbing this is the track played
+my $backing_track = undef;
+
+## Process command line
+my $ARGC = @ARGV;
+for(my $i = 0; $i < ($ARGC - 1); $i+=2){
+
+    ## The prefix to use (defaults to YYYYMMDDhhmmss)
+    if($ARGV[$i] eq "-p"){
+	$file_pfx = $ARGV[$i+1];
+	next;
+    }
+
+    ## If a backing track passed go straight to dubbing
+    if($ARGV[$i] eq "-b" ){
+	$backing_track = $ARGV[$i+1];
+	next;
+    }
+
+    ## A directory can be passed.  This is used in audio/
+    if($ARGV[$i] eq "-d"){
+	$directory = $ARGV[$i+1];
+	next;
+    }
+    &usage;
+    exit;
+}
+
+## Directory to write all files to
+my $data_dir = "$DIR/compositions";
+-d $data_dir or mkdir($data_dir) or die "$!: Cannot mkdir $data_dir ";
+
+## Recorded files go in a directory named `$fn`
+my $fn = 1;  
+
+## Overdubs go in the same directory as the recordings, with the same
+## name, with this prefix
+my $dub = 1; ## Name dubs with this
+
+# Set to the raw recording file name, and dub name, not extension, of
+# a recording
+my $fn_rec = undef;
+my $fn_dub = undef;
+
+## ?????
+my $fn_dir = undef;
+
+# The copy of `$file_pfx` used in recording
+my $pfx = $file_pfx;
+
+## `$JACKREC`  is a programme that reords all JAcl outputs as raw audio
+my $JACKREC = &One20Proof::get_bin()."/jack_rec";
+-x $JACKREC or die "$!: $JACKREC";
+
+## Programme to measure max amplitude of raw audio to reject silent files
+my $AMPLITUDE = &One20Proof::get_bin()."/peak_volume";
+-x $AMPLITUDE or die "$!:  $AMPLITUDE";
+
+## Used to replay the recording while overdubbing
+my $PLAY = "/usr/bin/mplayer";
+-x $PLAY or die "$!: $PLAY";
+
+## State machine:
+## init => get ready to record a track.  Start state
+my $init = 'init';
+## recording => recording a track
+my $recording = 'recording';
+## dubbing => playing back and recording
+my $dubbing = 'dubbing';
+
+# Initial state. If `-b <backing track>` on command line a backing
+# track is ready for dubbing
+my $state  = defined $backing_track  ? $dubbing : $init;
+
+## Mesages to display to the user for each state
+my %state_msg = (
+    $init => 'Press <enter> to start recording',
+    $recording => 'Press <enter> to start recording',
+    $dubbing => 'Press <enter> to start overdubbing'
+    );
+
+
+## If the programme is initialised with a backing track go straight to
+## dubbing mode
+if(defined $backing_track){
+    if(! -r $backing_track){
+        die "Unreadable backing track: $backing_track ";
+    }else{
+        $state = $dubbing;
+
+        ## If the backing track is one this programme has made that can be
+        ## used to help in the file name
+        my $id = "";
+        if($backing_track =~ /\d{14}(\S+).wav$/){
+            $id = '_'.$1.'_';
+        }
+        ## Other wise if the file name is a reasonable name use it as id
+        elsif($backing_track =~ /([a-zA-Z_\-\d\:\.]+)\.wav$/){
+            $id = '_'.$1.'_';
+        }
+        $pfx = $file_pfx.$id;
+
+        ## `$fn_rec` must be set here as normally it is set in recording
+        $backing_track =~ /([^\/]+)\.wav$/ or die "Backing track is not WAV \n$backing_track\n";
+        $fn_rec = $1;
+    }
+}
+
+# The directory to write data to.
+my $audio_dir = "$DIR/compositions/audio/$directory";
+`mkdir -p $audio_dir`;
+-d $audio_dir or die "$!: Audio directory: $audio_dir does not exist";
+
+## The input from the user.  It always ends with a new line
+my $inp = "\n";
+
+## For all states append this message to the display
+my $msg_sfx = ' <d> to go again deleting <q> to quit.  <n> for next recording ';
+
+while(1){
+    chomp $inp;
+    $inp eq 'q' and last;
+    if($inp =~ /n\s*$/){
+        #  Get ready for the next recording
+        $fn++; 
+        $state = $init;
+    }
+       
+    if($state eq $init){
+
+        ## Prepare to record a new track
+        $backing_track = undef;
+        
+        $pfx = $file_pfx;
+        ## Todo: Test what is present in the file system and set `$fn`
+        ## accordingly
+        ## FIXME "Do the work here to fix up file naming";
+
+        $fn_dir = "$audio_dir/$fn";
+        -d $fn_dir or mkdir($fn_dir) or die "$!: mkdir $fn_dir";
+
+        # `$fn_rec` is the stem of the file name.  The name assigned
+        # by jack_rec will be appended to it
+        $fn_rec = "$fn_dir/$pfx";
+
+        $state = $recording;
+    } elsif($state eq $recording){
+
+        print "Press <enter> to stop recording\n";
+        ## This blocks and returns a JSON object
+        my $result = `$JACKREC $fn_rec`;
+        print "Processing...\n";
+        my %out_file_stats = &process_jackrec($result);
+        my @possible_backing =  keys %out_file_stats;
+        my $avg = -9999999;
+        foreach my $p (@possible_backing){
+            my $_a = $out_file_stats{$p};
+            if($_a != 0 and $_a > $avg){
+                $avg = $_a;
+                $backing_track = $p;
+
+                # Use the first
+                last; 
+            }
+        }
+        defined($backing_track) or
+            die "No matching file has audio in it. ".
+            "Cannot make a backing track for dubbing";
+
+        $state = $dubbing;
+
+	my $_bt = $backing_track;
+	$_bt =~ s/^$audio_dir/$directory/ or die "$_bt";
+	print "$_bt\n";
+     }elsif($state eq $dubbing){
+        $fn_dub = $fn_rec."-$dub";
+        $dub++; # Finished with this for now, get ready for next dub
+        print "Press <enter> to stop overdubbing\n";
+        &One20Proof::run_daemon("$PLAY -ao jack $backing_track") or die;
+        ## This blocks and returns a JSON object
+        print "Press <enter> to stop overdubbing\n";
+        my $result = `$JACKREC $fn_dub`;
+        print `killall mplayer`;
+        print "Processing\n";
+        process_jackrec($result);
+        
+    }
+    print "$state_msg{$state} $msg_sfx\n";
+    $inp = <STDIN>;    
+}
+
+sub process_jackrec {
+
+    ## Process the raw audio
+    ## Return a hash of the wav files generated and their stats
+    my $start  = time();
+    my %result = ();
+    my $result = shift or die "Pass jackrec_qzt output";
+    $result =~ /output_files\": \[\s+(.+)\s+\]\s+}$/s;
+    my $fns = $1;
+    $fns =~ s/\s*\n\s*//g;
+    my @fns = map{s/\"(.+)\"$/$1/; $_} split(/,/, $fns);
+
+    
+    foreach my $fn (@fns) {
+        #        open(my $fh, $fn) or die "$!: $fn";
+        my $amp = `$AMPLITUDE "$fn"`;
+        # Only process files with audio
+        if($amp > 0.01){
+            my $fn2 = $fn;
+            $fn2 =~ s/raw$/wav/;
+            # SOX command: sox -t raw -b 32 -e float -c 1 -r 48k "-1_yoshimi-Song1:left.raw" -e signed-integer -b 16  "-1_yoshimi-Song1:left.wav" 
+            my $sox_cmd = "/usr/bin/sox -q -t raw -b 32 -e float -c 1 -r 48k \"$fn\" -e signed-integer -b 16  \"$fn2\"";
+
+	    `$sox_cmd `;
+	    my $peaks = peaks($fn2);
+	    $result{$fn2} = $peaks;
+	    my ($_fn) = $fn2 =~ /\/([^\/]+)$/;
+	    print sprintf("Peaks %0.4f Output $_fn\n", $peaks);
+        }
+    }
+    
+    foreach my $fn (@fns){
+	unlink $fn or die "$!: unlink $fn";
+    }
+    print("Processing files took: ".(time() - $start)." seconds\n");
+    return %result;
+    
+}
+# ffmpeg -i fooooo.wav -af astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=log.txt -f null -
+
+sub std_pfx {
+    return "Compose";
+}
+sub std_dir {
+    my @t = localtime();
+    my $wday = ('Sun', 'Mon', 'Tue', "Wed", 'Thu', 'Fri', 'Sat')[$t[6]]; 
+    return sprintf("%04d-%02d-%02dT%02d:%02d:%02d_$wday",
+                   $t[5]+1900, $t[4]+1, $t[3], $t[2], $t[1], $t[0]);
+}
+
+
+## Calculate the maximum, the average, and the minimum volume
+sub peaks {
+    my $fn = shift or die;
+    -r $fn or die "$!: Cannot read: '$fn' ";
+    my $result = `ffmpeg -loglevel quiet -i $fn -af astats=metadata=1:reset=1,ametadata=print:key=lavfi.astats.Overall.RMS_level:file=- -f null - `;
+    my @result = grep {/lavfi.astats.Overall.RMS_level=/} map{chomp; $_}split(/\n/, $result);
+    my @data = map{/lavfi.astats.Overall.RMS_level=(\S+)/; $1} grep {$_ ne "lavfi.astats.Overall.RMS_level=-inf"} @result;
+    my $positive_infinity = 99999999999;
+    my $negative_infinity = -1 * $positive_infinity;
+    
+    my ($avg, $sum, $max, $min) = (0, 0, $negative_infinity, $positive_infinity);
+    my $denom = scalar(@data);
+    
+    if ($denom ){
+        foreach my $datum (@data){
+            $sum += $datum;
+            $datum > $max and $max = $datum;
+            $datum < $min and $min = $datum;
+            $avg = $sum / $denom;
+        }
+    }else{
+        $max = 0;
+        $min = 0;
+        $avg = 0;
+    }
+    if(wantarray()){
+	return ($avg, $min, $max);
+    }else{
+	return $avg;
+    }
+}
+        
+    
+## Run a programme, either as a daemon (this function retutns straight
+## away) or wait on its output
+sub run_daemon( $;$ ) {
+    my $cmd = shift;
+    my $wait = shift or 0;
+    ## Prepare command
+    $cmd =~ /^(\S+)/ or die "Invalid command: '$cmd'";
+    my $_x = $1;
+    -x $_x or die "Must pass an executable.  '$_x' is not";
+    
+    defined(my $pid = fork())   or die "can't fork: $!";
+    $wait and waitpid($pid, 0);
+    if (!$pid){ 
+        
+        ## Create logs for stderr and stdout
+
+        # Get the name of the command by separating it from the path
+        my $command_file = $_x;
+        $command_file =~ s/^.+\/([^\/]+)$/$1/;
+        
+        my $stderr_fn = $DIR."/output/$command_file.$$.err";
+        $stderr_fn =~ /\/\.err$/ and
+            die "No file name for err: \$cmd: '$cmd' ".
+            join("\n", stack_trace());
+        my $stdout_fn = $DIR."/output/$command_file.$$.out";
+        $stdout_fn =~ /\/\.out$/ and
+            die "No file name for out: \$cmd: '$cmd' ".
+            join("\n", stack_trace());
+        open(my $stderr, ">>", $stderr_fn) or
+            die "$!: Cannot open $stderr_fn for append";
+        open(my $stdout, ">>", $stdout_fn) or
+            die "$!: Cannot open $stdout_fn for append";
+
+        # Turn on autoflush
+        select($stdout);
+        $|++;
+        select($stderr);
+        $|++;
+
+        open3(undef, '>&' . fileno($stdout),  '>&' . fileno($stderr), $cmd);
+        exit;
+    }
+    return $pid;
+}
