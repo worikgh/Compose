@@ -1,7 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 ## Debug with: o inhibit_exit=0
-IPC::Open3
+IPC::Open3;
 
 ## Compose
 (my $DIR = $0) =~ s/[^\/]+$//;
