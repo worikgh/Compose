@@ -215,7 +215,7 @@ while(1){
 	run_daemon("$PLAY -ao jack $backing_track") or die;
 	## This blocks and returns a JSON object
 	warn "Press <enter> to stop overdubbing\n";
-	my $cmd = "$JACKREC -p $fn_dub";
+	my $cmd = "$JACKREC -p \"$fn_dub\"";
 	warn "DBG compose: \$cmd:$cmd\n";
 	my $result = `$cmd`;
 	print `killall mplayer`;
