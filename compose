@@ -329,11 +329,11 @@ sub run_daemon { ##( $;$ ) {
 	my $command_file = $_x;
 	$command_file =~ s/^.+\/([^\/]+)$/$1/;
 
-	my $stderr_fn = $DIR."/output/$command_file.$$.err";
+	my $stderr_fn = $DIR."/$command_file.$$.err";
 	$stderr_fn =~ /\/\.err$/ and
 	    die "No file name for err: \$cmd: '$cmd' ".
 	    join("\n", stack_trace());
-	my $stdout_fn = $DIR."/output/$command_file.$$.out";
+	my $stdout_fn = $DIR."/$command_file.$$.out";
 	$stdout_fn =~ /\/\.out$/ and
 	    die "No file name for out: \$cmd: '$cmd' ".
 	    join("\n", stack_trace());
