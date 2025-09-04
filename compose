@@ -10,7 +10,7 @@ $DIR = '.' if !length($DIR);
 warn "\$DIR: $DIR\n";
 
 ## Locate Qzn3t root
-my $QZN3T = "$DIR/qzn3t";
+my $QZN3T = "$DIR/../qzn3t";
 -d $QZN3T or die "$!: $QZN3T is not a directory";
 
 ## `$JACKREC`  is a programme that reords all Jackd outputs as raw audio
