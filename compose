@@ -1,9 +1,10 @@
 #!/usr/bin/perl -w
 use strict;
 ## Debug with: o inhibit_exit=0
+IPC::Open3
 
 ## Compose
-
+https://github.com/worikgh/Compose/edit/main/compose
 (my $DIR = $0) =~ s/[^\/]+$//;
 $DIR = '.' if !length($DIR);
 warn "\$DIR: $DIR\n";
