@@ -1,16 +1,16 @@
 #!/usr/bin/perl -w
 use strict;
 ## Debug with: o inhibit_exit=0
-IPC::Open3;
+use IPC::Open3;
 
 ## Compose
 (my $DIR = $0) =~ s/[^\/]+$//;
+$DIR =~ s/\/$//; # Get rid of trailing slash
 $DIR = '.' if !length($DIR);
 warn "\$DIR: $DIR\n";
 
 ## Locate Qzn3t root
 my $QZN3T = "$DIR/qzn3t";
-+$DIR =~ s/\/$//; # Get rid of trailing slash
 -d $QZN3T or die "$!: $QZN3T is not a directory";
 
 ## `$JACKREC`  is a programme that reords all Jackd outputs as raw audio
