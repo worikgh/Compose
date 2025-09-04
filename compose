@@ -4,7 +4,6 @@ use strict;
 IPC::Open3
 
 ## Compose
-https://github.com/worikgh/Compose/edit/main/compose
 (my $DIR = $0) =~ s/[^\/]+$//;
 $DIR = '.' if !length($DIR);
 warn "\$DIR: $DIR\n";
