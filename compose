@@ -323,8 +323,8 @@ sub peaks {
 
 ## Run a programme, either as a daemon (this function retutns straight
 ## away) or wait on its output
-sub run_daemon { ##( $;$ ) {
-    my $cmd = shift;
+sub run_daemon {
+    my $cmd = shift or die "Must pass a command to run";
     my $wait = shift or 0;
     ## Prepare command
     $cmd =~ /^(\S+)/ or die "Invalid command: '$cmd'";
@@ -335,32 +335,40 @@ sub run_daemon { ##( $;$ ) {
     $wait and waitpid($pid, 0);
     if (!$pid){
 
+	## Child
+
 	## Create logs for stderr and stdout
 
 	# Get the name of the command by separating it from the path
 	my $command_file = $_x;
 	$command_file =~ s/^.+\/([^\/]+)$/$1/;
 
-	my $stderr_fn = $DIR."/$command_file.$$.err";
+	my $stderr_fn = $DIR."/$command_file.err";
 	$stderr_fn =~ /\/\.err$/ and
 	    die "No file name for err: \$cmd: '$cmd' ".
 	    join("\n", stack_trace());
-	my $stdout_fn = $DIR."/$command_file.$$.out";
+	open(my $stderr_fh, '>>', $stderr_fn) or die "$!: $stderr_fn";
+	open(STDERR, ">&",$stderr_fh) or die "$!:  Cannot redirect STDERR";
+	close $stderr_fh;
+
+	my $stdout_fn = $DIR."/$command_file.out";
 	$stdout_fn =~ /\/\.out$/ and
 	    die "No file name for out: \$cmd: '$cmd' ".
 	    join("\n", stack_trace());
-	open(my $stderr, ">>", $stderr_fn) or
-	    die "$!: Cannot open $stderr_fn for append";
-	open(my $stdout, ">>", $stdout_fn) or
-	    die "$!: Cannot open $stdout_fn for append";
+	open(my $stdout_fh, '>>', $stdout_fn) or die "$!: $stdout_fn";
+	open(STDOUT, ">&",$stdout_fh) or die "$!:  Cannot redirect STDOUT";
+	close $stdout_fh;
+
+	## No STDIN
+	open STDIN, '<', '/dev/null' or die "Can't read /dev/null: $!";
 
 	# Turn on autoflush
-	select($stdout);
+	select(STDOUT);
 	$|++;
-	select($stderr);
+	select(STDERR);
 	$|++;
 
-	open3(undef, '>&' . fileno($stdout),  '>&' . fileno($stderr), $cmd);
+	exec($cmd);
 	exit;
     }
     return $pid;
