@@ -253,8 +253,8 @@ sub process_jackrec {
 	    `$sox_cmd `;
 	    my $peaks = peaks($fn2);
 	    $result{$fn2} = $peaks;
-	    my ($_fn) = $fn2 =~ /\/([^\/]+)$/;
-	    print sprintf("Peaks %0.4f Output $_fn\n", $peaks);
+	    $fn2 =~ s/.*\/?([^\/]+).*$/$1/;
+	    print sprintf("Peaks %0.4f Output $fn2\n", $peaks);
 	}
     }
 
