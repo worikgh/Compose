@@ -137,7 +137,7 @@ if(defined $backing_track){
 	$pfx = $file_pfx.$id;
 
 	## `$fn_rec` must be set here as normally it is set in recording
-	$backing_track =~ /([^\/]+)\.wav$/ or die "Backing track is not WAV \n$backing_track\n";
+	$backing_track =~ /([^\/]+)\.wav$/ or $backing_track =~ /([^\/]+)\.flac$/ or die "Backing track is not WAV nor FLAC\n$backing_track\n";
 	$fn_rec = $1;
     }
 }
