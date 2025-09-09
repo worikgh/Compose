@@ -9,6 +9,14 @@ $DIR =~ s/\/$//; # Get rid of trailing slash
 $DIR = '.' if !length($DIR);
 warn "\$DIR: $DIR\n";
 
+## Hold the PID of any children so they can be killed on surprise
+## exit
+my @PIDS = ();
+$SIG{INT} = sub {
+    print "\nShutting down gracefully...\n";
+    kill 'TERM', @PIDS;
+    exit;
+};
 ## Locate Qzn3t root
 my $QZN3T = "$DIR/../qzn3t";
 -d $QZN3T or die "$!: $QZN3T is not a directory";
@@ -212,7 +220,9 @@ while(1){
 	$fn_dub = $fn_rec."-$dub";
 	$dub++; # Finished with this for now, get ready for next dub
 	print "Press <enter> to stop overdubbing\n";
-	run_daemon("$PLAY -ao jack $backing_track") or die;
+	my $pid = run_daemon("$PLAY -ao jack $backing_track") or die;
+	push(@PIDS, $pid);
+
 	## This blocks and returns a JSON object
 	warn "Press <enter> to stop overdubbing\n";
 	my $cmd = "$JACKREC -p \"$fn_dub\"";
