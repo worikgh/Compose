@@ -103,8 +103,6 @@ my $PLAY = "/usr/bin/mplayer";
 -x $PLAY or die "$!: $PLAY";
 
 ## State machine:
-## init => get ready to record a track.  Start state
-my $init = 'init';
 ## recording => recording a track
 my $recording = 'recording';
 ## dubbing => playing back and recording
@@ -112,11 +110,10 @@ my $dubbing = 'dubbing';
 
 # Initial state. If `-b <backing track>` on command line a backing
 # track is ready for dubbing
-my $state  = defined $backing_track  ? $dubbing : $init;
+my $state  = defined $backing_track  ? $dubbing : $recording;
 
 ## Mesages to display to the user for each state
 my %state_msg = (
-    $init => 'Press <enter> to start recording',
     $recording => 'Press <enter> to start recording',
     $dubbing => 'Press <enter> to start overdubbing'
     );
@@ -168,12 +165,10 @@ while(1){
     if($inp =~ /n\s*$/){
 	#  Get ready for the next recording
 	$fn++;
-	$state = $init;
-    }
+	$state = $recording;
 
-    if($state eq $init){
+    } elsif($state eq $recording){
 
-	## Prepare to record a new track
 	$backing_track = undef;
 
 	$pfx = $file_pfx;
