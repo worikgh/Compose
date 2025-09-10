@@ -9,6 +9,10 @@ $DIR =~ s/\/$//; # Get rid of trailing slash
 $DIR = '.' if !length($DIR);
 warn "\$DIR: $DIR\n";
 
+## Directory to write all files to
+my $DATADIR = "$DIR/compositions";
+-d $DATADIR or mkdir($DATADIR) or die "$!: Cannot mkdir $DATADIR ";
+
 ## Hold the PID of any children so they can be killed on surprise
 ## exit
 my @PIDS = ();
@@ -63,7 +67,8 @@ for(my $i = 0; $i < ($ARGC - 1); $i+=2){
 	next;
     }
 
-    ## If a backing track passed go straight to dubbing
+    ## If a backing track passed recording the first track will not
+    ## happen and it goes go straight to dubbing
     if($ARGV[$i] eq "-b" ){
 	$backing_track = $ARGV[$i+1];
 	next;
@@ -77,13 +82,6 @@ for(my $i = 0; $i < ($ARGC - 1); $i+=2){
     &usage;
     exit;
 }
-
-## Directory to write all files to
-my $DATADIR = "$DIR/compositions";
--d $DATADIR or mkdir($DATADIR) or die "$!: Cannot mkdir $DATADIR ";
-
-## Recorded files go in a directory named `$fn`
-my $fn = 1;
 
 ## Overdubs go in the same directory as the recordings, with the same
 ## name, with this prefix
@@ -144,7 +142,7 @@ if(defined $backing_track){
 	}
 	$pfx = $file_pfx.$id;
 
-	## `$fn_rec` must be set here as normally it is set in recording
+	## `$fn_rec` is the track to be played under overdubbing
 	$backing_track =~ /([^\/]+)\.wav$/ or $backing_track =~ /([^\/]+)\.flac$/ or die "Backing track is not WAV nor FLAC\n$backing_track\n";
 	$fn_rec = $1;
     }
@@ -161,6 +159,9 @@ my $inp = "\n";
 ## For all states append this message to the display
 my $msg_sfx = ' <d> to go again deleting <q> to quit.  <n> for next recording ';
 
+## Recorded files go in a directory named `$fn`
+my $fn = 1;
+
 while(1){
     chomp $inp;
     $inp eq 'q' and last;
@@ -176,10 +177,6 @@ while(1){
 	$backing_track = undef;
 
 	$pfx = $file_pfx;
-	## Todo: Test what is present in the file system and set `$fn`
-	## accordingly
-	## FIXME "Do the work here to fix up file naming";
-
 	$fn_dir = "$audio_dir/$fn";
 	-d $fn_dir or mkdir($fn_dir) or die "$!: mkdir $fn_dir";
 
@@ -191,10 +188,13 @@ while(1){
     } elsif($state eq $recording){
 
 	print "Press <enter> to stop recording\n";
-	## This blocks and returns a JSON object
+	## This blocks untill a line is entered from keyboard (enter
+	## key is pressed) and returns a JSON object
 	my $result = `$JACKREC -p "$fn_rec"`;
+
 	print "Processing...\n";
 	my %out_file_stats = &process_jackrec($result);
+
 	my @possible_backing =  keys %out_file_stats;
 	my $avg = -9999999;
 	foreach my $p (@possible_backing){
