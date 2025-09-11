@@ -1,9 +1,7 @@
 #!/usr/bin/perl -w
 use strict;
 ## Debug with: o inhibit_exit=0
-use IPC::Open3;
 
-use IO::Handle;
 ## Compose
 (my $DIR = $0) =~ s/[^\/]+$//;
 $DIR =~ s/\/$//; # Get rid of trailing slash
@@ -125,6 +123,7 @@ my $state  = defined $backing_track  ? $dubbing : $recording;
 my %state_msg = (
     $recording => 'Press <enter> to start recording',
     $dubbing => 'Press <enter> to start overdubbing',
+    $rec_review => 'Press <enter> to review recording r <enter> to record again d <enter> to overdub',
     );
 
 
@@ -163,30 +162,27 @@ my $audio_dir = "$DATADIR/audio/$directory";
 my $inp = "\n";
 
 ## For all states append this message to the display
-my $msg_sfx = ' <d> to go again deleting <q> to quit.  <n> for next recording ';
 
 ## Recorded files go in a directory named `$fn`
 my $fn = 1;
 
 while(1){
+
+    print "$state_msg{$state}\n";
+    $inp = <STDIN>;
     chomp $inp;
     $inp eq 'q' and last;
-    if($inp =~ /n\s*$/){
-	#  Get ready for the next recording
-	$fn++;
-	$state = $recording;
 
-    } elsif($state eq $recording){
+    if($state eq $recording){
 
 	$backing_track = undef;
 
-	$pfx = $file_pfx;
 	$fn_dir = "$audio_dir/$fn";
 	-d $fn_dir or mkdir($fn_dir) or die "$!: mkdir $fn_dir";
 
 	# `$fn_rec` is the stem of the file name.  The name assigned
 	# by jack_rec will be appended to it
-	$fn_rec = "$fn_dir/$pfx";
+	$fn_rec = "$fn_dir/$file_pfx";
 
 	print "Press <enter> to stop recording\n";
 	## This blocks untill a line is entered from keyboard (enter
@@ -224,22 +220,13 @@ while(1){
 	next;
     }elsif($state eq $rec_review){
 
-	my $pid = run_daemon("$PLAY -ao jack $backing_track") or die;
-	push(@PIDS, $pid);
-	STDIN->blocking(0);
-	print "y to accept / n to reject\n";
-	while(1) {
-	    my $k = getc(STDIN);
-	    if(defined($k)){
-		if($k eq 'y' || $k eq 'Y'){
-		    $state = $dubbing;
-		    next;
-		}elsif($k eq 'n' || $k eq 'N'){
-		    next;
-		}else{
-		    print"\n n or y\n";
-		}
-	    }
+	if(lc($inp) eq 'r'){
+	    $state = $recording;
+	}elsif(lc($inp) eq 'd'){
+	    ## TODO  Where is backing track set?
+	    $state = $dubbing;
+	}else{
+	    `$PLAY -ao jack "$backing_track"`;
 	}
     }elsif($state eq $dubbing){
 	$fn_dub = $fn_rec."-$dub";
@@ -258,8 +245,6 @@ while(1){
 	process_jackrec($result);
 
     }
-    print "$state_msg{$state} $msg_sfx\n";
-    $inp = <STDIN>;
 }
 
 sub process_jackrec {
