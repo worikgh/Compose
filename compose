@@ -3,6 +3,7 @@ use strict;
 ## Debug with: o inhibit_exit=0
 use IPC::Open3;
 
+use IO::Handle;
 ## Compose
 (my $DIR = $0) =~ s/[^\/]+$//;
 $DIR =~ s/\/$//; # Get rid of trailing slash
@@ -107,6 +108,14 @@ my $PLAY = "/usr/bin/mplayer";
 my $recording = 'recording';
 ## dubbing => playing back and recording
 my $dubbing = 'dubbing';
+## Reviewing a recording
+my $rec_review = "recording_review";
+# Accept, or not, a recording
+my $rec_accept = 'rec_accept';
+## Reviewing the result of dubbing
+my $dub_review = "dub_review";
+## Accept or not the dubing
+my $dub_accept = 'dub_accept';
 
 # Initial state. If `-b <backing track>` on command line a backing
 # track is ready for dubbing
@@ -115,7 +124,7 @@ my $state  = defined $backing_track  ? $dubbing : $recording;
 ## Mesages to display to the user for each state
 my %state_msg = (
     $recording => 'Press <enter> to start recording',
-    $dubbing => 'Press <enter> to start overdubbing'
+    $dubbing => 'Press <enter> to start overdubbing',
     );
 
 
@@ -179,9 +188,6 @@ while(1){
 	# by jack_rec will be appended to it
 	$fn_rec = "$fn_dir/$pfx";
 
-	$state = $recording;
-    } elsif($state eq $recording){
-
 	print "Press <enter> to stop recording\n";
 	## This blocks untill a line is entered from keyboard (enter
 	## key is pressed) and returns a JSON object
@@ -202,15 +208,39 @@ while(1){
 		last;
 	    }
 	}
-	defined($backing_track) or
-	    die "No matching file has audio in it. ".
-	    "Cannot make a backing track for dubbing";
 
-	$state = $dubbing;
+	if(!defined($backing_track)){
+	    print "No matching file has audio in it. ".
+		"Cannot make a backing track for dubbing";
+	    $state = $recording;
+	}else{
 
-	my $_bt = $backing_track;
-	$_bt =~ s/^$audio_dir/$directory/ or die "$_bt";
-	print "$_bt\n";
+	    $state = $rec_review;
+
+	    my $_bt = $backing_track;
+	    $_bt =~ s/^$audio_dir/$directory/ or die "$_bt";
+	    print "$_bt\n";
+	}
+	next;
+    }elsif($state eq $rec_review){
+
+	my $pid = run_daemon("$PLAY -ao jack $backing_track") or die;
+	push(@PIDS, $pid);
+	STDIN->blocking(0);
+	print "y to accept / n to reject\n";
+	while(1) {
+	    my $k = getc(STDIN);
+	    if(defined($k)){
+		if($k eq 'y' || $k eq 'Y'){
+		    $state = $dubbing;
+		    next;
+		}elsif($k eq 'n' || $k eq 'N'){
+		    next;
+		}else{
+		    print"\n n or y\n";
+		}
+	    }
+	}
     }elsif($state eq $dubbing){
 	$fn_dub = $fn_rec."-$dub";
 	$dub++; # Finished with this for now, get ready for next dub
